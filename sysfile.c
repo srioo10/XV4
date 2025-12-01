@@ -453,35 +453,27 @@ sys_version_create(void)
   struct inode *ip;
   int len;
 
-  if(argstr(0, &path) < 0 || argstr(1, &desc) < 0){
-    cprintf("sys_version_create: failed to get args\n");
+  if(argstr(0, &path) < 0 || argstr(1, &desc) < 0)
     return -1;
-  }
   
   // Calculate description length
   len = 0;
   while(desc[len]) len++;
 
-  cprintf("sys_version_create: path=%s desc=%s len=%d\n", path, desc, len);
-
   begin_op();
   if((ip = namei(path)) == 0){
-    cprintf("sys_version_create: file not found\n");
     end_op();
     return -1;
   }
   
-  cprintf("sys_version_create: got inode, calling version_create\n");
   ilock(ip);
   uint vblock = version_create(ip, desc, len);
   if(vblock == 0){
-    cprintf("sys_version_create: version_create returned 0\n");
     iunlockput(ip);
     end_op();
     return -1;
   }
   
-  cprintf("sys_version_create: success, vblock=%d\n", vblock);
   iunlockput(ip);
   end_op();
   return 0;

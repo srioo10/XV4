@@ -192,7 +192,7 @@ UPROGS=\
 	_zombie\
 	_testchrono\
 	_mkver\
-	_isver
+	_isver\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

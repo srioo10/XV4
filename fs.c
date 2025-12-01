@@ -749,6 +749,10 @@ version_create(struct inode *ip, char *description, uint desc_len)
   log_write(bp);
   brelse(bp);
   
+  // Update inode with new version head
+  ip->version_head = vblock;
+  iupdate(ip);
+  
   return vblock;
 }
 
