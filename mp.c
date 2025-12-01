@@ -2,6 +2,9 @@
 // Search memory for MP description structures.
 // http://developer.intel.com/design/pentium/datashts/24201606.pdf
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+
 #include "types.h"
 #include "defs.h"
 #include "param.h"
@@ -78,6 +81,8 @@ mpconfig(struct mp **pmp)
   if((mp = mpsearch()) == 0 || mp->physaddr == 0)
     return 0;
   conf = (struct mpconf*) P2V((uint) mp->physaddr);
+  if(conf == 0)
+    return 0;
   if(memcmp(conf, "PCMP", 4) != 0)
     return 0;
   if(conf->version != 1 && conf->version != 4)
@@ -137,3 +142,4 @@ mpinit(void)
     outb(0x23, inb(0x23) | 1);  // Mask external interrupts.
   }
 }
+#pragma GCC diagnostic pop

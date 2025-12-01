@@ -442,3 +442,109 @@ sys_pipe(void)
   fd[1] = fd1;
   return 0;
 }
+
+// ChronoFS system calls
+
+int
+sys_version_create(void)
+{
+  char *path;
+  char *desc;
+  struct inode *ip;
+  int len;
+
+  if(argstr(0, &path) < 0 || argstr(1, &desc) < 0){
+    cprintf("sys_version_create: failed to get args\n");
+    return -1;
+  }
+  
+  // Calculate description length
+  len = 0;
+  while(desc[len]) len++;
+
+  cprintf("sys_version_create: path=%s desc=%s len=%d\n", path, desc, len);
+
+  begin_op();
+  if((ip = namei(path)) == 0){
+    cprintf("sys_version_create: file not found\n");
+    end_op();
+    return -1;
+  }
+  
+  cprintf("sys_version_create: got inode, calling version_create\n");
+  ilock(ip);
+  uint vblock = version_create(ip, desc, len);
+  if(vblock == 0){
+    cprintf("sys_version_create: version_create returned 0\n");
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+  
+  cprintf("sys_version_create: success, vblock=%d\n", vblock);
+  iunlockput(ip);
+  end_op();
+  return 0;
+}
+
+int
+sys_version_list(void)
+{
+  char *path;
+  void *buf;
+  int max_entries;
+  struct inode *ip;
+  int count;
+
+  if(argstr(0, &path) < 0 || argptr(1, (void*)&buf, 0) < 0 || argint(2, &max_entries) < 0)
+    return -1;
+
+  begin_op();
+  if((ip = namei(path)) == 0){
+    end_op();
+    return -1;
+  }
+  
+  ilock(ip);
+  count = version_list(ip, (struct version_info*)buf, max_entries);
+  iunlockput(ip);
+  end_op();
+  return count;
+}
+
+int
+sys_snapshot_create(void)
+{
+  char *desc;
+  
+  if(argstr(0, &desc) < 0)
+    return -1;
+    
+  // Not implemented yet - placeholder
+  return -1;
+}
+
+int
+sys_snapshot_restore(void)
+{
+  char *desc;
+  
+  if(argstr(0, &desc) < 0)
+    return -1;
+    
+  // Not implemented yet - placeholder
+  return -1;
+}
+
+int
+sys_recover_file(void)
+{
+  char *path;
+  
+  if(argstr(0, &path) < 0)
+    return -1;
+    
+  // Not implemented yet - placeholder
+  return -1;
+}
+

@@ -4,6 +4,7 @@ OBJS = \
 	exec.o\
 	file.o\
 	fs.o\
+	gc.o\
 	ide.o\
 	ioapic.o\
 	kalloc.o\
@@ -76,7 +77,7 @@ AS = $(TOOLPREFIX)gas
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer -Wno-infinite-recursion
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
 # FreeBSD ld wants ``elf_i386_fbsd''
@@ -155,6 +156,14 @@ _forktest: forktest.o $(ULIB)
 	# in order to be able to max out the proc table.
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o _forktest forktest.o ulib.o usys.o
 	$(OBJDUMP) -S _forktest > forktest.asm
+	
+lsver.o: lsver.c
+	$(CC) $(CFLAGS) -c -o lsver.o lsver.c
+
+_lsver: lsver.o $(ULIB)
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o _lsver lsver.o $(ULIB)
+	$(OBJDUMP) -S _lsver > lsver.asm
+	$(OBJDUMP) -t _lsver | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > lsver.sym
 
 mkfs: mkfs.c fs.h
 	gcc -Werror -Wall -o mkfs mkfs.c
@@ -181,6 +190,9 @@ UPROGS=\
 	_usertests\
 	_wc\
 	_zombie\
+	_testchrono\
+	_mkver\
+	_isver
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
@@ -284,3 +296,4 @@ tar:
 	(cd /tmp; tar cf - xv6) | gzip >xv6-rev10.tar.gz  # the next one will be 10 (9/17)
 
 .PHONY: dist-test dist
+

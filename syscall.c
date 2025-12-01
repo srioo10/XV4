@@ -103,6 +103,11 @@ extern int sys_unlink(void);
 extern int sys_wait(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
+extern int sys_version_create(void);
+extern int sys_version_list(void);
+extern int sys_snapshot_create(void);
+extern int sys_snapshot_restore(void);
+extern int sys_recover_file(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -126,6 +131,11 @@ static int (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_version_create] sys_version_create,
+[SYS_version_list]   sys_version_list,
+[SYS_snapshot_create] sys_snapshot_create,
+[SYS_snapshot_restore] sys_snapshot_restore,
+[SYS_recover_file]   sys_recover_file,
 };
 
 void

@@ -9,7 +9,15 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
-
+struct version_info;
+struct snapshot_metadata;
+struct recovery_entry;
+struct deleted_entry;
+struct version_info;
+struct snapshot_metadata;
+struct recovery_entry;
+struct deleted_entry;
+struct version_node;
 // bio.c
 void            binit(void);
 struct buf*     bread(uint, uint);
@@ -52,6 +60,50 @@ struct inode*   nameiparent(char*, char*);
 int             readi(struct inode*, char*, uint, uint);
 void            stati(struct inode*, struct stat*);
 int             writei(struct inode*, char*, uint, uint);
+
+// ChronoFS: Version management (fs.c)
+uint            version_create(struct inode*, char*, uint);
+struct version_node* version_get(uint);
+int             version_list(struct inode*, struct version_info*, int);
+void            version_free(uint);
+uint            get_timestamp(void);
+
+// ChronoFS: snapshot.c
+void            snapshot_init(void);
+int             snapshot_create(char*);
+int             snapshot_restore(char*);
+int             snapshot_delete(char*);
+int             snapshot_list(struct snapshot_metadata*, int);
+
+// ChronoFS: recovery.c
+void            recovery_init(void);
+int             recover_file(char*, uint);
+int             undelete_file(char*);
+int             list_recoverable(struct recovery_entry*, int);
+int             list_deleted(struct deleted_entry*, int);
+struct inode*   get_file_at_time(char*, uint);
+int             list_versions(char*, struct version_info*, int);
+
+// ChronoFS: journal.c
+void            journal_init(void);
+int             journal_begin_tx(void);
+int             journal_log_write(uint, char*);
+int             journal_commit_tx(void);
+int             journal_abort_tx(void);
+void            journal_recover(void);
+
+// ChronoFS: gc.c
+void            gc_init(void);
+void            bref_init(void);
+int             bref_inc(uint);
+int             bref_dec(uint);
+uint            bref_get(uint);
+void            dedup_init(void);
+uint            dedup_hash(char*, uint);
+uint            dedup_find(uint);
+int             dedup_insert(uint, uint);
+int             gc_run(void);
+
 
 // ide.c
 void            ideinit(void);

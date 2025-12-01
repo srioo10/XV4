@@ -407,6 +407,10 @@ forkret(void)
     first = 0;
     iinit(ROOTDEV);
     initlog(ROOTDEV);
+    
+    // ChronoFS initialization (after FS is ready)
+    gc_init();
+    cprintf("ChronoFS: Initialized\n");
   }
 
   // Return to "caller", actually trapret (see allocproc).
@@ -532,3 +536,4 @@ procdump(void)
     cprintf("\n");
   }
 }
+

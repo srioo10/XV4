@@ -230,6 +230,8 @@ ialloc(ushort type)
   din.type = xshort(type);
   din.nlink = xshort(1);
   din.size = xint(0);
+  din.create_time = xint(0);     // Initialize ChronoFS field
+  din.version_head = xint(0);    // Initialize ChronoFS field
   winode(inum, &din);
   return inum;
 }
@@ -274,13 +276,13 @@ iappend(uint inum, void *xp, int n)
       }
       x = xint(din.addrs[fbn]);
     } else {
-      if(xint(din.addrs[NDIRECT]) == 0){
-        din.addrs[NDIRECT] = xint(freeblock++);
+      if(xint(din.indirect) == 0){
+        din.indirect = xint(freeblock++);
       }
-      rsect(xint(din.addrs[NDIRECT]), (char*)indirect);
+      rsect(xint(din.indirect), (char*)indirect);
       if(indirect[fbn - NDIRECT] == 0){
         indirect[fbn - NDIRECT] = xint(freeblock++);
-        wsect(xint(din.addrs[NDIRECT]), (char*)indirect);
+        wsect(xint(din.indirect), (char*)indirect);
       }
       x = xint(indirect[fbn-NDIRECT]);
     }

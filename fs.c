@@ -20,6 +20,7 @@
 #include "fs.h"
 #include "buf.h"
 #include "file.h"
+#include "gc.h"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 static void itrunc(struct inode*);
@@ -204,6 +205,13 @@ ialloc(uint dev, short type)
     if(dip->type == 0){  // a free inode
       memset(dip, 0, sizeof(*dip));
       dip->type = type;
+      
+      extern uint ticks;
+      acquire(&tickslock);
+      dip->create_time = ticks;
+      release(&tickslock);
+      dip->version_head = 0;
+      
       log_write(bp);   // mark it allocated on the disk
       brelse(bp);
       return iget(dev, inum);
@@ -231,6 +239,11 @@ iupdate(struct inode *ip)
   dip->nlink = ip->nlink;
   dip->size = ip->size;
   memmove(dip->addrs, ip->addrs, sizeof(ip->addrs));
+  dip->indirect = ip->indirect;
+  
+  dip->create_time = ip->create_time;
+  dip->version_head = ip->version_head;
+  
   log_write(bp);
   brelse(bp);
 }
@@ -304,6 +317,11 @@ ilock(struct inode *ip)
     ip->nlink = dip->nlink;
     ip->size = dip->size;
     memmove(ip->addrs, dip->addrs, sizeof(ip->addrs));
+    ip->indirect = dip->indirect;
+    
+    ip->create_time = dip->create_time;
+    ip->version_head = dip->version_head;
+    
     brelse(bp);
     ip->valid = 1;
     if(ip->type == 0)
@@ -384,8 +402,8 @@ bmap(struct inode *ip, uint bn)
 
   if(bn < NINDIRECT){
     // Load indirect block, allocating if necessary.
-    if((addr = ip->addrs[NDIRECT]) == 0)
-      ip->addrs[NDIRECT] = addr = balloc(ip->dev);
+    if((addr = ip->indirect) == 0)
+      ip->indirect = addr = balloc(ip->dev);
     bp = bread(ip->dev, addr);
     a = (uint*)bp->data;
     if((addr = a[bn]) == 0){
@@ -411,6 +429,7 @@ itrunc(struct inode *ip)
   struct buf *bp;
   uint *a;
 
+  // Free direct blocks
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
       bfree(ip->dev, ip->addrs[i]);
@@ -418,16 +437,17 @@ itrunc(struct inode *ip)
     }
   }
 
-  if(ip->addrs[NDIRECT]){
-    bp = bread(ip->dev, ip->addrs[NDIRECT]);
+  // Free indirect block and its contents
+  if(ip->indirect){
+    bp = bread(ip->dev, ip->indirect);
     a = (uint*)bp->data;
     for(j = 0; j < NINDIRECT; j++){
       if(a[j])
         bfree(ip->dev, a[j]);
     }
     brelse(bp);
-    bfree(ip->dev, ip->addrs[NDIRECT]);
-    ip->addrs[NDIRECT] = 0;
+    bfree(ip->dev, ip->indirect);
+    ip->indirect = 0;
   }
 
   ip->size = 0;
@@ -668,3 +688,141 @@ nameiparent(char *path, char *name)
 {
   return namex(path, 1, name);
 }
+
+//PAGEBREAK!
+// ChronoFS: Version Management
+
+// Get current timestamp
+uint
+get_timestamp(void)
+{
+  extern uint ticks;
+  acquire(&tickslock);
+  uint t = ticks;
+  release(&tickslock);
+  return t;
+}
+
+// Create a new version node for a file
+// Returns block number of the version node, or 0 on failure
+uint
+version_create(struct inode *ip, char *description, uint desc_len)
+{
+  struct buf *bp;
+  struct version_node *vnode;
+  uint vblock;
+  
+  // Allocate a block for the version node
+  vblock = balloc(ip->dev);
+  if(vblock == 0)
+    return 0;
+  
+  // Read and initialize the version node
+  bp = bread(ip->dev, vblock);
+  vnode = (struct version_node*)bp->data;
+  
+  memset(vnode, 0, sizeof(*vnode));
+  vnode->timestamp = get_timestamp();
+  vnode->prev_version = ip->version_head; // Link to previous version
+  vnode->file_size = ip->size;
+  vnode->refcount = 1;
+  
+  // Copy data block addresses
+  vnode->nblocks = 0;
+  for(int i = 0; i < NDIRECT && i < VNODE_DATA_BLOCKS; i++){
+    if(ip->addrs[i]){
+      vnode->data_blocks[vnode->nblocks++] = ip->addrs[i];
+      bref_inc(ip->addrs[i]); // Increment reference count
+    }
+  }
+  
+  // Copy description if provided
+  if(description && desc_len > 0){
+    uint len = desc_len < 32 ? desc_len : 31;
+    memmove(vnode->description, description, len);
+    vnode->description[len] = 0;
+  }
+  
+  // Simple checksum
+  vnode->checksum = vnode->timestamp + vnode->file_size + vnode->nblocks;
+  
+  log_write(bp);
+  brelse(bp);
+  
+  return vblock;
+}
+
+// Get a version node by block number
+struct version_node*
+version_get(uint vblock)
+{
+  static struct version_node vnode;
+  struct buf *bp;
+  
+  if(vblock == 0)
+    return 0;
+  
+  bp = bread(ROOTDEV, vblock);
+  memmove(&vnode, bp->data, sizeof(vnode));
+  brelse(bp);
+  
+  return &vnode;
+}
+
+// List all versions of a file
+// Returns number of versions found
+int
+version_list(struct inode *ip, struct version_info *buf, int max)
+{
+  uint vblock;
+  struct version_node *vnode;
+  int count = 0;
+  
+  vblock = ip->version_head;
+  
+  while(vblock != 0 && count < max){
+    vnode = version_get(vblock);
+    if(vnode == 0)
+      break;
+    
+    buf[count].version_num = count;
+    buf[count].timestamp = vnode->timestamp;
+    buf[count].file_size = vnode->file_size;
+    buf[count].block_count = vnode->nblocks;
+    memmove(buf[count].description, vnode->description, 32);
+    
+    count++;
+    vblock = vnode->prev_version;
+  }
+  
+  return count;
+}
+
+// Free a version node and its resources
+void
+version_free(uint vblock)
+{
+  struct version_node *vnode;
+  
+  if(vblock == 0)
+    return;
+  
+  vnode = version_get(vblock);
+  if(vnode == 0)
+    return;
+  
+  // Decrement reference counts for data blocks
+  for(uint i = 0; i < vnode->nblocks; i++){
+    if(vnode->data_blocks[i]){
+      uint refcount = bref_dec(vnode->data_blocks[i]);
+      // If refcount reaches 0, free the block
+      if(refcount == 0){
+        bfree(ROOTDEV, vnode->data_blocks[i]);
+      }
+    }
+  }
+  
+  // Free the version node block itself
+  bfree(ROOTDEV, vblock);
+}
+

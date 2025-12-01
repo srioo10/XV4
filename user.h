@@ -23,6 +23,11 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int version_create(char*, char*);
+int version_list(char*, void*, int);
+int snapshot_create(char*);
+int snapshot_restore(char*);
+int recover_file(char*);
 
 // ulib.c
 int stat(const char*, struct stat*);

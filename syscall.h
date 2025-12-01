@@ -20,3 +20,8 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
+#define SYS_version_create 22
+#define SYS_version_list   23
+#define SYS_snapshot_create 24
+#define SYS_snapshot_restore 25
+#define SYS_recover_file   26
