@@ -87,6 +87,7 @@ struct version_node {
   uint refcount;            // Reference count
   char description[32];     // Optional description
   uint checksum;            // Simple integrity check
+  uint snapshot_id;         // ID of snapshot this version belongs to (0 if none)
 };
 
 // Snapshot metadata structure (stored in snapshot inodes)
@@ -94,6 +95,7 @@ struct snapshot_metadata {
   uint valid;               // Is this snapshot valid?
   uint timestamp;           // When snapshot was created
   char name[32];            // User-provided name
+  uint id;                  // Unique ID
   uint root_inum;           // Root inode at snapshot time
   uint file_count;          // Number of files in snapshot
   uint total_blocks;        // Total blocks referenced
@@ -135,12 +137,11 @@ struct dedup_entry {
 
 // Deleted file tracking (for recovery)
 struct deleted_entry {
-  uint valid;               // Is this entry valid?
-  uint inum;                // Original inode number
-  uint deletion_time;       // When file was deleted
-  char path[128];           // Last known path
+  char name[DIRSIZ];        // Original filename
+  uint inum;                // Inode number  
   uint version_head;        // Head of version chain
-  uint file_size;           // Size at deletion
+  uint delete_time;         // When it was deleted
+  int valid;                // Is this entry valid?
 };
 
 // Version information (for user queries)
@@ -153,9 +154,22 @@ struct version_info {
 };
 
 // Recovery entry (for listing recoverable files)
+// struct deleted_entry is already defined above
+
+#define MAX_DELETED_FILES 32
+
 struct recovery_entry {
   char path[128];           // File path
   uint deletion_time;       // When deleted
-  uint file_size;           // Size at deletion
-  uint version_count;       // Number of versions available
+  uint version_head;        // Head of version chain
 };
+
+// System-wide snapshot metadata
+// struct snapshot_metadata is already defined above
+
+// Update the existing snapshot_metadata struct if needed, but for now we'll use the one at line 94
+// However, the one at line 94 has different fields. Let's unify them.
+// The one at line 94 is better. We just need to add 'id' to it if it's missing.
+// Actually, let's just remove the duplicate here and update the original one if needed.
+
+

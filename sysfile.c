@@ -13,6 +13,7 @@
 #include "fs.h"
 #include "spinlock.h"
 #include "sleeplock.h"
+#include "buf.h"
 #include "file.h"
 #include "fcntl.h"
 
@@ -213,6 +214,11 @@ sys_unlink(void)
   if(ip->type == T_DIR && !isdirempty(ip)){
     iunlockput(ip);
     goto bad;
+  }
+  
+  // ChronoFS: If file has versions, track it before deletion
+  if(ip->type == T_FILE && ip->version_head != 0){
+    add_deleted_file(name, ip->inum, ip->version_head);
   }
 
   memset(&de, 0, sizeof(de));
@@ -467,7 +473,7 @@ sys_version_create(void)
   }
   
   ilock(ip);
-  uint vblock = version_create(ip, desc, len);
+  uint vblock = version_create(ip, desc, len, 0);
   if(vblock == 0){
     iunlockput(ip);
     end_op();
@@ -512,8 +518,7 @@ sys_snapshot_create(void)
   if(argstr(0, &desc) < 0)
     return -1;
     
-  // Not implemented yet - placeholder
-  return -1;
+  return snapshot_create(desc);
 }
 
 int
@@ -531,12 +536,61 @@ sys_snapshot_restore(void)
 int
 sys_recover_file(void)
 {
-  char *path;
+  char *name;
+  struct inode *ip;
+  struct version_node *vnode;
   
-  if(argstr(0, &path) < 0)
+  if(argstr(0, &name) < 0)
     return -1;
     
-  // Not implemented yet - placeholder
-  return -1;
+  // Find deleted file info
+  uint vhead = recover_deleted_file(name);
+  if(vhead == 0)
+    return -1; // Not found or not recoverable
+    
+  begin_op();
+  
+  // Allocate new inode
+  ip = ialloc(ROOTDEV, T_FILE);
+  if(ip == 0){
+    end_op();
+    return -1;
+  }
+  
+  ilock(ip);  // Lock the inode before modifying
+  
+  // Explicitly set inode fields
+  ip->type = T_FILE;
+  ip->nlink = 1;
+  
+  // Restore content from version by sharing blocks
+  vnode = version_get(vhead);
+  if(vnode){
+    ip->version_head = vhead;
+    ip->size = vnode->file_size;
+    
+    // Share blocks from version (read-only recovery)
+    // The blocks are shared with the version, so modifications will
+    // trigger copy-on-write in the future (not implemented yet)
+    for(int i = 0; i < vnode->nblocks && i < NDIRECT; i++){
+      ip->addrs[i] = vnode->data_blocks[i];
+      // Increment reference count to prevent double-free
+      bref_inc(vnode->data_blocks[i]);
+    }
+  }
+  
+  iupdate(ip);  // Write inode to disk
+  
+  // Create directory entry
+  if(dirlink(namei("."), name, ip->inum) < 0){
+    ip->nlink = 0;
+    iupdate(ip);
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+  
+  iunlockput(ip);
+  end_op();
+  return 0;
 }
-

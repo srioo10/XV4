@@ -13,11 +13,8 @@ struct version_info;
 struct snapshot_metadata;
 struct recovery_entry;
 struct deleted_entry;
-struct version_info;
-struct snapshot_metadata;
-struct recovery_entry;
-struct deleted_entry;
 struct version_node;
+
 // bio.c
 void            binit(void);
 struct buf*     bread(uint, uint);
@@ -62,11 +59,17 @@ void            stati(struct inode*, struct stat*);
 int             writei(struct inode*, char*, uint, uint);
 
 // ChronoFS: Version management (fs.c)
-uint            version_create(struct inode*, char*, uint);
+uint            version_create(struct inode*, char*, uint, uint);
 struct version_node* version_get(uint);
 int             version_list(struct inode*, struct version_info*, int);
+void            init_deleted_list(void);
+void            add_deleted_file(char*, uint, uint);
+struct deleted_entry* find_deleted_file(char*);
+uint            recover_deleted_file(char*);
 void            version_free(uint);
 uint            get_timestamp(void);
+uint            balloc(uint);
+void            bfree(int, uint);
 
 // ChronoFS: snapshot.c
 void            snapshot_init(void);
@@ -240,3 +243,4 @@ void            clearpteu(pde_t *pgdir, char *uva);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
