@@ -100,6 +100,7 @@ void            gc_init(void);
 void            bref_init(void);
 int             bref_inc(uint);
 int             bref_dec(uint);
+int             bref_is_tracked(uint);
 uint            bref_get(uint);
 void            dedup_init(void);
 uint            dedup_hash(char*, uint);

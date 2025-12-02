@@ -25,3 +25,4 @@
 #define SYS_snapshot_create 24
 #define SYS_snapshot_restore 25
 #define SYS_recover_file   26
+#define SYS_version_restore 27
