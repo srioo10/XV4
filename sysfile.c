@@ -567,8 +567,9 @@ sys_recover_file(void)
   // Restore content from version by COPYING blocks (not sharing)
   vnode = version_get(vhead);
   if(vnode){
-    ip->version_head = vhead;
     ip->size = vnode->file_size;
+    // Don't link to version history - just restore the latest content
+    ip->version_head = 0;
     
     // Copy blocks from version (create new blocks with same data)
     // This avoids reference counting and shared ownership issues
