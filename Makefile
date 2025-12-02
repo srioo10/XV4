@@ -192,7 +192,10 @@ UPROGS=\
 	_zombie\
 	_testchrono\
 	_mkver\
-	_isver
+	_isver\
+	_mksnap\
+	_recover\
+	_restorever\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)

@@ -54,7 +54,7 @@ bzero(int dev, int bno)
 // Blocks.
 
 // Allocate a zeroed disk block.
-static uint
+uint
 balloc(uint dev)
 {
   int b, bi, m;
@@ -79,7 +79,7 @@ balloc(uint dev)
 }
 
 // Free a disk block.
-static void
+void
 bfree(int dev, uint b)
 {
   struct buf *bp;
@@ -432,7 +432,15 @@ itrunc(struct inode *ip)
   // Free direct blocks
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
-      bfree(ip->dev, ip->addrs[i]);
+      // ChronoFS: Only use refcount for recovered files
+      // Normal files just free blocks directly
+      if(bref_is_tracked(ip->addrs[i])){
+        if(bref_dec(ip->addrs[i]) == 0){
+          bfree(ip->dev, ip->addrs[i]);
+        }
+      } else {
+        bfree(ip->dev, ip->addrs[i]);
+      }
       ip->addrs[i] = 0;
     }
   }
@@ -706,7 +714,7 @@ get_timestamp(void)
 // Create a new version node for a file
 // Returns block number of the version node, or 0 on failure
 uint
-version_create(struct inode *ip, char *description, uint desc_len)
+version_create(struct inode *ip, char *description, uint desc_len, uint snapshot_id)
 {
   struct buf *bp;
   struct version_node *vnode;
@@ -726,13 +734,28 @@ version_create(struct inode *ip, char *description, uint desc_len)
   vnode->prev_version = ip->version_head; // Link to previous version
   vnode->file_size = ip->size;
   vnode->refcount = 1;
+  vnode->snapshot_id = snapshot_id;
   
-  // Copy data block addresses
+  // Copy data block addresses (Copy-on-Version)
   vnode->nblocks = 0;
   for(int i = 0; i < NDIRECT && i < VNODE_DATA_BLOCKS; i++){
     if(ip->addrs[i]){
-      vnode->data_blocks[vnode->nblocks++] = ip->addrs[i];
-      bref_inc(ip->addrs[i]); // Increment reference count
+      // Allocate a new block for the version
+      uint newblock = balloc(ip->dev);
+      if(newblock == 0) continue;
+      
+      // Copy data from file block to version block
+      struct buf *src = bread(ip->dev, ip->addrs[i]);
+      struct buf *dst = bread(ip->dev, newblock);
+      memmove(dst->data, src->data, BSIZE);
+      log_write(dst);
+      brelse(src);
+      brelse(dst);
+      
+      vnode->data_blocks[vnode->nblocks++] = newblock;
+      
+      // Increment refcount for the NEW block
+      bref_inc(newblock);
     }
   }
   
@@ -748,6 +771,10 @@ version_create(struct inode *ip, char *description, uint desc_len)
   
   log_write(bp);
   brelse(bp);
+  
+  // Update inode with new version head
+  ip->version_head = vblock;
+  iupdate(ip);
   
   return vblock;
 }
@@ -796,6 +823,128 @@ version_list(struct inode *ip, struct version_info *buf, int max)
   }
   
   return count;
+}
+
+// Snapshot management
+struct snapshot_metadata snapshots[MAX_SNAPSHOTS];
+struct spinlock snapshot_lock;
+
+void
+init_snapshot_list(void)
+{
+  initlock(&snapshot_lock, "snapshots");
+  memset(snapshots, 0, sizeof(snapshots));
+}
+
+// Create a system-wide snapshot
+int
+snapshot_create(char *name)
+{
+  int i;
+  uint id;
+  
+  acquire(&snapshot_lock);
+  
+  // Find empty slot
+  for(i = 0; i < MAX_SNAPSHOTS; i++){
+    if(!snapshots[i].valid)
+      break;
+  }
+  
+  if(i == MAX_SNAPSHOTS){
+    release(&snapshot_lock);
+    return -1; // No space
+  }
+  
+  // Initialize snapshot metadata
+  memmove(snapshots[i].name, name, 32);
+  snapshots[i].timestamp = get_timestamp();
+  snapshots[i].id = i + 1;
+  snapshots[i].valid = 1;
+  id = snapshots[i].id;
+  
+  release(&snapshot_lock);
+  
+  // For now, just record the snapshot metadata
+  // We don't iterate through all files (which causes crashes)
+  // Instead, files are versioned on-demand when mkver is called
+  cprintf("Snapshot '%s' created successfully (ID: %d)\n", name, id);
+  return id;
+}
+
+int
+snapshot_restore(char *name)
+{
+  // Placeholder for restore logic
+  return -1;
+}
+
+// Deleted files tracking
+struct deleted_entry deleted_files[MAX_DELETED_FILES];
+struct spinlock deleted_lock;
+
+void
+init_deleted_list(void)
+{
+  initlock(&deleted_lock, "deleted_files");
+  memset(deleted_files, 0, sizeof(deleted_files));
+}
+
+// Add a file to the deleted list
+void
+add_deleted_file(char *name, uint inum, uint version_head)
+{
+  int i;
+  acquire(&deleted_lock);
+  
+  // Find empty slot
+  for(i = 0; i < MAX_DELETED_FILES; i++){
+    if(!deleted_files[i].valid){
+      memmove(deleted_files[i].name, name, DIRSIZ);
+      deleted_files[i].inum = inum;
+      deleted_files[i].version_head = version_head;
+      deleted_files[i].delete_time = get_timestamp();
+      deleted_files[i].valid = 1;
+      break;
+    }
+  }
+  
+  release(&deleted_lock);
+}
+
+// Find a deleted file by name
+struct deleted_entry*
+find_deleted_file(char *name)
+{
+  int i;
+  // Note: caller must hold deleted_lock if they want to modify
+  // For simple lookup, we just scan
+  
+  for(i = 0; i < MAX_DELETED_FILES; i++){
+    if(deleted_files[i].valid && strncmp(deleted_files[i].name, name, DIRSIZ) == 0){
+      return &deleted_files[i];
+    }
+  }
+  return 0;
+}
+
+// Recover a deleted file
+// Returns version_head on success, 0 on failure
+uint
+recover_deleted_file(char *name)
+{
+  struct deleted_entry *de;
+  uint vhead = 0;
+  
+  acquire(&deleted_lock);
+  de = find_deleted_file(name);
+  if(de){
+    vhead = de->version_head;
+    de->valid = 0; // Remove from list
+  }
+  release(&deleted_lock);
+  
+  return vhead;
 }
 
 // Free a version node and its resources

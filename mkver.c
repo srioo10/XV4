@@ -10,9 +10,6 @@ main(int argc, char *argv[])
     exit();
   }
 
-  printf(1, "mkver: would create version for %s with desc '%s'\n", argv[1], argv[2]);
-  printf(1, "mkver: calling version_create syscall...\n");
-  
   if(version_create(argv[1], argv[2]) < 0){
     printf(2, "mkver: failed to create version\n");
     exit();
@@ -21,3 +18,4 @@ main(int argc, char *argv[])
   printf(1, "Version created successfully\n");
   exit();
 }
+

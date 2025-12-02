@@ -20,13 +20,23 @@ main(int argc, char *argv[])
     exit();
   }
 
+  if(count == 0){
+    printf(1, "No versions found for %s\n", argv[1]);
+    exit();
+  }
+
   printf(1, "Versions for %s:\n", argv[1]);
+  printf(1, "Ver  Time      Size    Blocks  Description\n");
+  printf(1, "---  ----      ----    ------  -----------\n");
+  
   for(i = 0; i < count; i++){
-    printf(1, "ID: %d, Time: %d, Desc: %s\n", 
-           versions[i].version_num, 
-           versions[i].timestamp, 
-           versions[i].description);
+    printf(1, "%d    ", versions[i].version_num);
+    printf(1, "%d      ", versions[i].timestamp);
+    printf(1, "%d       ", versions[i].file_size);
+    printf(1, "%d       ", versions[i].block_count);
+    printf(1, "%s\n", versions[i].description);
   }
   
   exit();
 }
+
