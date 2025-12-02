@@ -110,7 +110,6 @@ extern int sys_snapshot_restore(void);
 extern int sys_recover_file(void);
 extern int sys_version_restore(void);
 
-
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
 [SYS_exit]    sys_exit,

@@ -779,6 +779,8 @@ version_create(struct inode *ip, char *description, uint desc_len, uint snapshot
   return vblock;
 }
 
+
+
 // Get a version node by block number
 struct version_node*
 version_get(uint vblock)
@@ -865,9 +867,6 @@ snapshot_create(char *name)
   
   release(&snapshot_lock);
   
-  // For now, just record the snapshot metadata
-  // We don't iterate through all files (which causes crashes)
-  // Instead, files are versioned on-demand when mkver is called
   cprintf("Snapshot '%s' created successfully (ID: %d)\n", name, id);
   return id;
 }

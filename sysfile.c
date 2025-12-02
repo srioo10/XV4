@@ -521,6 +521,7 @@ sys_snapshot_create(void)
   return snapshot_create(desc);
 }
 
+
 int
 sys_snapshot_restore(void)
 {

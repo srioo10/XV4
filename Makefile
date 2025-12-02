@@ -196,6 +196,7 @@ UPROGS=\
 	_mksnap\
 	_recover\
 	_restorever\
+	_restore_snap\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
