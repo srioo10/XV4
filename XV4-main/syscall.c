@@ -108,6 +108,8 @@ extern int sys_version_list(void);
 extern int sys_snapshot_create(void);
 extern int sys_snapshot_restore(void);
 extern int sys_recover_file(void);
+extern int sys_version_restore(void);
+
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -136,6 +138,7 @@ static int (*syscalls[])(void) = {
 [SYS_snapshot_create] sys_snapshot_create,
 [SYS_snapshot_restore] sys_snapshot_restore,
 [SYS_recover_file]   sys_recover_file,
+[SYS_version_restore] sys_version_restore,
 };
 
 void
@@ -153,3 +156,4 @@ syscall(void)
     curproc->tf->eax = -1;
   }
 }
+

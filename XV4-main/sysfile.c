@@ -13,6 +13,7 @@
 #include "fs.h"
 #include "spinlock.h"
 #include "sleeplock.h"
+#include "buf.h"
 #include "file.h"
 #include "fcntl.h"
 
@@ -213,6 +214,11 @@ sys_unlink(void)
   if(ip->type == T_DIR && !isdirempty(ip)){
     iunlockput(ip);
     goto bad;
+  }
+  
+  // ChronoFS: If file has versions, track it before deletion
+  if(ip->type == T_FILE && ip->version_head != 0){
+    add_deleted_file(name, ip->inum, ip->version_head);
   }
 
   memset(&de, 0, sizeof(de));
@@ -453,35 +459,27 @@ sys_version_create(void)
   struct inode *ip;
   int len;
 
-  if(argstr(0, &path) < 0 || argstr(1, &desc) < 0){
-    cprintf("sys_version_create: failed to get args\n");
+  if(argstr(0, &path) < 0 || argstr(1, &desc) < 0)
     return -1;
-  }
   
   // Calculate description length
   len = 0;
   while(desc[len]) len++;
 
-  cprintf("sys_version_create: path=%s desc=%s len=%d\n", path, desc, len);
-
   begin_op();
   if((ip = namei(path)) == 0){
-    cprintf("sys_version_create: file not found\n");
     end_op();
     return -1;
   }
   
-  cprintf("sys_version_create: got inode, calling version_create\n");
   ilock(ip);
-  uint vblock = version_create(ip, desc, len);
+  uint vblock = version_create(ip, desc, len, 0);
   if(vblock == 0){
-    cprintf("sys_version_create: version_create returned 0\n");
     iunlockput(ip);
     end_op();
     return -1;
   }
   
-  cprintf("sys_version_create: success, vblock=%d\n", vblock);
   iunlockput(ip);
   end_op();
   return 0;
@@ -520,8 +518,7 @@ sys_snapshot_create(void)
   if(argstr(0, &desc) < 0)
     return -1;
     
-  // Not implemented yet - placeholder
-  return -1;
+  return snapshot_create(desc);
 }
 
 int
@@ -539,12 +536,154 @@ sys_snapshot_restore(void)
 int
 sys_recover_file(void)
 {
-  char *path;
+  char *name;
+  struct inode *ip;
+  struct version_node *vnode;
   
-  if(argstr(0, &path) < 0)
+  if(argstr(0, &name) < 0)
     return -1;
     
-  // Not implemented yet - placeholder
+  // Find deleted file info
+  uint vhead = recover_deleted_file(name);
+  if(vhead == 0)
+    return -1; // Not found or not recoverable
+    
+  begin_op();
+  
+  // Allocate new inode
+  ip = ialloc(ROOTDEV, T_FILE);
+  if(ip == 0){
+    end_op();
+    return -1;
+  }
+  
+  ilock(ip);  // Lock the inode before modifying
+  
+  // Explicitly set inode fields
+  ip->type = T_FILE;
+  ip->nlink = 1;
+  
+  // Restore content from version by COPYING blocks (not sharing)
+  vnode = version_get(vhead);
+  if(vnode){
+    ip->version_head = vhead;
+    ip->size = vnode->file_size;
+    
+    // Copy blocks from version (create new blocks with same data)
+    // This avoids reference counting and shared ownership issues
+    for(int i = 0; i < vnode->nblocks && i < NDIRECT; i++){
+      uint new_block = balloc(ip->dev);
+      if(new_block == 0){
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+      
+      // Copy data from version block to new block
+      struct buf *src_bp = bread(ip->dev, vnode->data_blocks[i]);
+      struct buf *dst_bp = bread(ip->dev, new_block);
+      memmove(dst_bp->data, src_bp->data, BSIZE);
+      log_write(dst_bp);
+      brelse(dst_bp);
+      brelse(src_bp);
+      
+      ip->addrs[i] = new_block;
+    }
+  }
+  
+  iupdate(ip);  // Write inode to disk
+  
+  // Create directory entry
+  if(dirlink(namei("."), name, ip->inum) < 0){
+    ip->nlink = 0;
+    iupdate(ip);
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+  
+  iunlockput(ip);
+  end_op();
+  return 0;
+}
+
+int
+sys_version_restore(void)
+{
+  char *path;
+  int version_num;
+  struct inode *ip;
+  
+  if(argstr(0, &path) < 0 || argint(1, &version_num) < 0)
+    return -1;
+  
+  begin_op();
+  
+  if((ip = namei(path)) == 0){
+    end_op();
+    return -1;
+  }
+  
+  ilock(ip);
+  
+  // Get the target version from the version chain
+  struct version_node *vnode = 0;
+  uint vblock = ip->version_head;
+  int current_version = 0;
+  
+  // Walk the version chain to find the target version
+  while(vblock != 0){
+    vnode = version_get(vblock);
+    if(vnode == 0)
+      break;
+    
+    if(current_version == version_num){
+      // Found the target version - restore it
+      
+      // 1. Free current blocks
+      for(int i = 0; i < NDIRECT; i++){
+        if(ip->addrs[i]){
+          if(bref_is_tracked(ip->addrs[i])){
+             if(bref_dec(ip->addrs[i]) == 0) bfree(ip->dev, ip->addrs[i]);
+          } else {
+             bfree(ip->dev, ip->addrs[i]);
+          }
+          ip->addrs[i] = 0;
+        }
+      }
+      
+      // 2. Restore from version by COPYING blocks (safe)
+      ip->size = vnode->file_size;
+      
+      for(int i = 0; i < vnode->nblocks && i < NDIRECT; i++){
+        // Allocate new block
+        uint newblock = balloc(ip->dev);
+        if(newblock == 0) break; // Should handle error better but panic avoidance
+        
+        // Copy data
+        struct buf *src = bread(ip->dev, vnode->data_blocks[i]);
+        struct buf *dst = bread(ip->dev, newblock);
+        memmove(dst->data, src->data, BSIZE);
+        log_write(dst);
+        brelse(src);
+        brelse(dst);
+        
+        ip->addrs[i] = newblock;
+      }
+      
+      iupdate(ip);
+      iunlockput(ip);
+      end_op();
+      return 0;
+    }
+    
+    current_version++;
+    vblock = vnode->prev_version;
+  }
+  
+  // Version not found
+  iunlockput(ip);
+  end_op();
   return -1;
 }
 

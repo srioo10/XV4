@@ -28,6 +28,7 @@ int version_list(char*, void*, int);
 int snapshot_create(char*);
 int snapshot_restore(char*);
 int recover_file(char*);
+int version_restore(char*, int);
 
 // ulib.c
 int stat(const char*, struct stat*);

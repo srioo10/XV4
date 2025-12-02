@@ -119,6 +119,25 @@ bref_dec(uint block_num)
   return count;
 }
 
+// Check if a block is tracked in the refcount table
+int
+bref_is_tracked(uint block_num)
+{
+  acquire(&refcount_table.lock);
+  
+  for(int i = 0; i < MAX_REFCOUNT_ENTRIES; i++){
+    if(refcount_table.entries[i].valid && 
+       refcount_table.entries[i].block_num == block_num){
+      release(&refcount_table.lock);
+      return 1; // Found
+    }
+  }
+  
+  release(&refcount_table.lock);
+  return 0; // Not found
+}
+
+
 // Get block reference count
 uint
 bref_get(uint block_num)
@@ -266,3 +285,4 @@ gc_run(void)
   
   return 0;
 }
+

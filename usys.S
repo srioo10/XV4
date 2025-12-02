@@ -35,3 +35,5 @@ SYSCALL(snapshot_create)
 SYSCALL(snapshot_restore)
 SYSCALL(recover_file)
 SYSCALL(version_restore)
+SYSCALL(version_get_content)
+
