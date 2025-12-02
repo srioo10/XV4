@@ -20,8 +20,5 @@ System snapshots (named points-in-time).
 
 Integration with a file recovery mechanism.
 
-Hooks for journaling and future space optimizations (dedup / GC).
-
-
 Acknowledgements
 Base OS and original file system from the xv6 teaching operating system by MIT PDOS.
